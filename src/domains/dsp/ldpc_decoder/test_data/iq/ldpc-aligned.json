@@ -1,0 +1,13 @@
+{
+  "description": "Aligned QPSK symbol-rate replay, not an RF recording",
+  "iq_format": "little-endian complex float32, interleaved I/Q, 1 SPS",
+  "frames": 64,
+  "symbols_per_frame": 1024,
+  "reference_format": "U8 hard bits, full 2560-bit codeword per frame",
+  "bit_mapping": "I then Q, positive axis = 0; soft values = sqrt(2)*[I,Q]",
+  "puncturing": "transmit bits 0..2047; decoder inserts zeros at 2048..2559",
+  "corpus_sha256": "a0fd17f595c1fbbc5b2d0def5e30bf4060feab9559c5099eceb68ca1e5831cd2",
+  "iq_sha256": "6ea63bbeec7ec4809875d73532f499ccb4582310a633677c5e1d22aa96d5eec7",
+  "truth_sha256": "a9afd57f3d0a2694fe5cbaf73fda3c72e5ce2471d5544ae6eefb6b822776160f",
+  "limitations": "Exact frame boundaries supplied by file layout; no synchronization or deframing; finite precision IQ round-trip may perturb failed-frame reference decisions"
+}

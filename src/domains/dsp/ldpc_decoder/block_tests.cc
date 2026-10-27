@@ -5,8 +5,19 @@
 
 #include "jetstream/domains/dsp/ldpc_decoder/block.hh"
 #include "flowgraph_fixture.hh"
+#include "jetstream/registry.hh"
 
 using namespace Jetstream;
+
+TEST_CASE("Aligned LDPC demo is registered as an example",
+          "[modules][dsp][ldpc_decoder][example]") {
+    const auto examples = Registry::ListAvailableFlowgraphs("ldpc-aligned");
+    REQUIRE(examples.size() == 1);
+    REQUIRE(examples.front().title == "Aligned AR4JA LDPC Decoder");
+    Parser::Map document;
+    REQUIRE(Parser::YamlDecode(examples.front().content, document) == Result::SUCCESS);
+    REQUIRE(document.contains("graph"));
+}
 
 TEST_CASE_METHOD(FlowgraphFixture,
                  "LDPC decoder block wires llr input and bits output",
@@ -28,7 +39,8 @@ TEST_CASE_METHOD(FlowgraphFixture,
 
     const auto block = viewBlock("ldpc");
     const Tensor out = block.outputs.at("bits").tensor;
-    REQUIRE(out.dtype() == DataType::F32);
+    REQUIRE(out.dtype() == DataType::U8);
+    REQUIRE(out.elementSize() == 1);
     REQUIRE(out.rank() == 1);
     REQUIRE(out.shape(0) == 2560);
 

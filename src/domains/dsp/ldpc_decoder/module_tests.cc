@@ -1,11 +1,116 @@
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
+#include <chrono>
+#include <cstdlib>
+#include <fstream>
+#include <iomanip>
+#include <numeric>
 
 #include "jetstream/domains/dsp/ldpc_decoder/module.hh"
 #include "jetstream/registry.hh"
 #include "jetstream/testing.hh"
 #include "test_data/ldpc_golden.hh"
+#include "test_data/ldpc_corpus.hh"
 
 using namespace Jetstream;
+
+// Opt-in only: the Python runner supplies the destination. Measures the
+// TestContext CPU compute path, including its output snapshot, not setup.
+TEST_CASE("LDPC decoder - CPU benchmark", "[.][ldpc_benchmark]") {
+    const char* destination = std::getenv("LDPC_BENCHMARK_OUTPUT");
+    REQUIRE(destination != nullptr);
+    std::ofstream report(destination);
+    REQUIRE(report.good());
+    report << std::setprecision(17) << "[";
+    bool first = true;
+    for (const U64 batch : {U64(1), U64(64)}) {
+        for (int snr = -1; snr < ldpc_corpus::kSnrGroups; ++snr) {
+            TestContext ctx("ldpc_decoder", DeviceType::CPU,
+                            RuntimeType::NATIVE, "generic");
+            Modules::LdpcDecoder config;
+            ctx.setConfig(config);
+            Tensor input(DeviceType::CPU, DataType::F32, {batch, 2048});
+            ctx.setInput("llr", input);
+            REQUIRE(ctx.start() == Result::SUCCESS);
+            std::vector<double> samples;
+            U64 referenceIterations = 0;
+            U64 referenceConverged = 0;
+            U64 truthErrors = 0;
+            for (int trial = -5; trial < 51; ++trial) {
+                const auto frameForLane = [&](U64 lane) {
+                    const U64 index = lane + static_cast<U64>(trial + 5);
+                    return snr < 0 ? index % ldpc_corpus::kFrames
+                        : snr * ldpc_corpus::kFramesPerSnr +
+                            index % ldpc_corpus::kFramesPerSnr;
+                };
+                for (U64 lane = 0; lane < batch; ++lane) {
+                    const auto frame = frameForLane(lane);
+                    for (U64 i = 0; i < 2048; ++i) {
+                        input.at<F32>(lane, i) = ldpc_corpus::kLlrs[frame][i];
+                    }
+                }
+                const auto start = std::chrono::steady_clock::now();
+                const auto result = ctx.compute();
+                const auto end = std::chrono::steady_clock::now();
+                REQUIRE(result == Result::SUCCESS);
+                if (trial >= 0) {
+                    samples.push_back(std::chrono::duration<double, std::micro>(
+                        end - start).count());
+                }
+                // Correctness is outside the timed interval, on every trial.
+                const auto& output = ctx.output("bits");
+                U64 mismatches = 0;
+                for (U64 lane = 0; lane < batch; ++lane) {
+                    const auto frame = frameForLane(lane);
+                    if (trial >= 0) {
+                        referenceIterations += ldpc_corpus::kIterations[frame];
+                        referenceConverged += ldpc_corpus::kConverged[frame];
+                    }
+                    for (U64 i = 0; i < 2560; ++i) {
+                        mismatches += output.at<U8>(lane, i) !=
+                            ldpc_corpus::kReference[frame][i];
+                        if (trial >= 0) {
+                            truthErrors += output.at<U8>(lane, i) !=
+                                ldpc_corpus::kCodewords[frame][i];
+                        }
+                    }
+                }
+                REQUIRE(mismatches == 0);
+            }
+            REQUIRE(ctx.stop() == Result::SUCCESS);
+            auto sorted = samples;
+            std::sort(sorted.begin(), sorted.end());
+            const double median = sorted[sorted.size() / 2];
+            if (!first) report << ",";
+            first = false;
+            report << "{\"implementation\":\"cpu-generic\",\"batch\":" << batch
+                   << ",\"snr_group\":" << snr
+                   << ",\"ebn0_db\":" << (snr < 0 ? "null" :
+                        std::to_string(ldpc_corpus::kEbn0Db[
+                            snr * ldpc_corpus::kFramesPerSnr]))
+                   << ",\"reference_iteration_total\":" << referenceIterations
+                   << ",\"reference_converged_frames\":" << referenceConverged
+                   << ",\"truth_bit_errors\":" << truthErrors
+                   << ",\"max_iterations\":50,\"early_stop\":true"
+                   << ",\"warmups\":5,\"correctness\":\"pass\""
+                   << ",\"median_batch_us\":" << median
+                   << ",\"amortized_frame_us\":" << median / batch
+                   << ",\"information_mbps\":" << batch * 1024.0 / median
+                   << ",\"aggregate_information_mbps\":"
+                   << batch * 1024.0 * samples.size() /
+                        std::accumulate(samples.begin(), samples.end(), 0.0)
+                   << ",\"samples_batch_us\":[";
+            for (size_t i = 0; i < samples.size(); ++i) {
+                if (i) report << ",";
+                report << samples[i];
+            }
+            report << "]}";
+        }
+    }
+    report << "]\n";
+    report.close();
+    REQUIRE(report.good());
+}
 
 namespace {
 
@@ -68,12 +173,13 @@ TEST_CASE("LDPC decoder - recovers flipped bits from all-zero codeword",
             REQUIRE(ctx.run() == Result::SUCCESS);
 
             const auto& out = ctx.output("bits");
-            REQUIRE(out.dtype() == DataType::F32);
+            REQUIRE(out.dtype() == DataType::U8);
+            REQUIRE(out.elementSize() == 1);
             REQUIRE(out.rank() == 1);
             REQUIRE(out.shape(0) == 2560);
 
             for (U64 i = 0; i < out.size(); ++i) {
-                REQUIRE(out.at<F32>(i) == 0.0f);
+                REQUIRE(out.at<U8>(i) == 0);
             }
         }
     }
@@ -104,7 +210,7 @@ TEST_CASE("LDPC decoder - decodes lanes independently",
             REQUIRE(out.shape(1) == 2560);
             for (U64 lane = 0; lane < 2; ++lane) {
                 for (U64 i = 0; i < 2560; ++i) {
-                    REQUIRE(out.at<F32>(lane, i) == 0.0f);
+                    REQUIRE(out.at<U8>(lane, i) == 0);
                 }
             }
         }
@@ -141,9 +247,8 @@ TEST_CASE("LDPC decoder - golden vectors from the validated pipeline",
             U64 mismatches = 0;
             for (I64 f = 0; f < ldpc_golden::kFrames; ++f) {
                 for (I64 i = 0; i < ldpc_golden::kFrameBits; ++i) {
-                    const F32 expected =
-                        static_cast<F32>(ldpc_golden::kCodewords[f][i]);
-                    if (out.at<F32>(f, i) != expected) {
+                    const U8 expected = ldpc_golden::kCodewords[f][i];
+                    if (out.at<U8>(f, i) != expected) {
                         ++mismatches;
                     }
                 }

@@ -1,0 +1,266 @@
+{
+  "version": 2,
+  "title": "Aligned AR4JA LDPC Decoder",
+  "summary": "Known-data CPU decoding with measured pre/post-FEC BER.",
+  "author": "Paulo-D2000",
+  "license": "MIT",
+  "description": "Fixed-code aligned-LLR demonstration; requires Python and NumPy. No synchronizer or deframer yet.",
+  "graph": [
+    {
+      "name": "scope",
+      "module": "note",
+      "device": "cpu",
+      "runtime": "native",
+      "provider": "generic",
+      "config": {
+        "content": "# Aligned CCSDS AR4JA decoder demo\n\n**Requires Python with NumPy. CPU only.**\n\nThis is a known encoded nonzero frame repeatedly QPSK-modulated with fresh\nAWGN noise. An ideal coherent demapper extracts I/Q soft values. It demonstrates\naligned soft-input decoding, not a complete\nCCSDS receiver. There is no live encoder, carrier/timing recovery, frame\nsynchronizer, CRC or deframer in this example.\n\nEdit EBN0_DB in the channel block and run it (Ctrl+Enter). Default: 3 dB.\nFor aligned 1-SPS IQ replay, export files with export_demo_iq.py and set\nIQ_FILE and TRUTH_FILE in that block. Files loop at the end; counters then\ncount repeated observations, not additional independent recorded frames.\nThe decoder is fixed to AR4JA rate 1/2, k=1024; the code is not selectable.\nIts output is the full 2560-bit codeword as U8, one byte per decision.\n\n## Plots and counters\nThe two plots show **per-frame BER over the same 2048 transmitted positions**\nbefore and after decoding. Horizontal axis: the latest 128 frames, initially\nzero-filled. Normalized vertical range 0..1 is BER, not dB or radio power.\nThe monitor's third output is [frames, pre errors, post errors, compared\nbits, wrong full codewords, full-codeword FER, current unsatisfied parity\nchecks]. Inspect that wire for counts. Unsatisfied checks are syndrome\nweight, NOT BER. Passing every check does not prove the message is correct.\nZero observed errors is not proof of zero underlying BER. This repeats one\nknown message; use the separate multi-frame benchmark corpus for timing.\n\nThe source clock only triggers compute. Its values are ignored; it does\nnot simulate carrier or timing offsets. Next stages add actual modulation,\nsynchronization and a defined payload framing format.\n"
+      },
+      "meta": {
+        "node": {
+          "x": 0,
+          "y": 420,
+          "width": 360,
+          "height": 0
+        }
+      }
+    },
+    {
+      "name": "clock",
+      "module": "signal_generator",
+      "device": "cpu",
+      "runtime": "native",
+      "provider": "generic",
+      "config": {
+        "signalType": "cosine",
+        "signalDataType": "F32",
+        "sampleRate": 2048,
+        "frequency": 1,
+        "amplitude": 1,
+        "bufferSize": 2048
+      },
+      "meta": {
+        "node": {
+          "x": 0,
+          "y": 0,
+          "width": 360,
+          "height": 0
+        }
+      }
+    },
+    {
+      "name": "channel",
+      "module": "python",
+      "device": "cpu",
+      "runtime": "python",
+      "provider": "generic",
+      "config": {
+        "code": "import numpy as np\n\n# Verified encoded nonzero frame, not an encoder implementation.\nBITS = \"0000111111100111111011010000111000001010101000001101100111100110100110100011001001011000000101101100010100000101001111000101111110111001010010000000000011011100001011101011100010001101111000100010100111100001010100011001101010011001000011011110011011100000001100000001101001111110000111001011001100110011101111111011010011110100100000100001110111110000000110001011010000111010011001001001000000000111010101101010100101101110110010000001010100101010010011010011110000111000100100011010001110001101011101010111111101011111100111000011110001110010110101100111110010001001011001011010100011000100011100110110010101101110100000010111011111100010001011001110000011001011010110110110010110110010101011010001010001100101111110101000100100100001101101100010111000011011100001000111111001111001100110101110111001000010010010010000010010101101001000100000010010101100101100110011001001101010110111011011000011011001001000110000001101100001101110100110100010111101110011111110111110100001111010011101001111010001000100110000110000110000111011011001110000111000011111011100010010010000011000110111011011010010100000110001001110001101001101110011100001100000001100000101010100011001101010010100101000001010111010111111100011111100101001111110110011111110111100001011110011100000111000110111111000011001000001110010010110011110110110110110000011111011100101111000110010011010000000001000100111010010010111011111110111010000111111111101110000100010111000001011100100010110111010001001001011111100010100001100010101000111010110001001101010111110000000100110111100000010101100111100010101100001100001000011001110011100001111100000100101010010001100101100111010111110010101010101110101100010001010000010111111010101111000000101111011000111111010001100000001100111100101100101010111101010100011101010010001001010001100010000100011100010100101000100111000001101010011011010001100111011011001010110100111001001100111010100111100101111100101111110000111111011110101111100011100001010110010000010111110110101000111001110101111010010010110011010110101100111111000001000001011111000111000101011101101001010111010111010101011000100110000110111000010010011100110010010111010111100100001000010101100010000101011011111101100010010000000001110000101000001001111000011111111010111011111110110011111011110000000000110010011001000011011101011010011111100001101111001111000111010001000011100011110101000010110111110010101100111010101111101001000111001001101011011111001001011001000000001010101111110100000110011011100101111001110101010011110110101101000100001000010001010101000111000101110111100\"\ntruth = np.fromiter((int(b) for b in BITS), dtype=np.uint8)\nrng = np.random.default_rng(42)\nEBN0_DB = 3.0  # Edit and run this block to change the channel.\nIQ_FILE = \"\"   # Optional aligned .cf32 file from export_demo_iq.py\nTRUTH_FILE = \"\"  # Matching full-codeword .u8 reference file\nreplay_index = 0\nif bool(IQ_FILE) != bool(TRUTH_FILE):\n    raise ValueError(\"Set both IQ_FILE and TRUTH_FILE, or neither\")\nif IQ_FILE:\n    replay_iq = np.fromfile(IQ_FILE, dtype=\"<c8\").reshape(-1, 1024)\n    replay_truth = np.fromfile(TRUTH_FILE, dtype=np.uint8).reshape(-1, 2560)\n    if len(replay_iq) == 0 or len(replay_iq) != len(replay_truth):\n        raise ValueError(\"Mismatched or empty IQ/reference files\")\n\ndef compute(ctx):\n    global replay_index\n    if IQ_FILE:\n        ctx.outputs[0][...] = replay_iq[replay_index]\n        ctx.outputs[1][...] = replay_truth[replay_index]\n        replay_index = (replay_index + 1) % len(replay_iq)\n        return\n    # QPSK bit 0 -> positive axis; R=1024/2048=1/2.\n    # This stage assumes perfect symbol timing and carrier/frame alignment.\n    sigma = np.sqrt(1.0 / (2.0 * 0.5 * 10.0**(EBN0_DB / 10.0)))\n    axes = 1.0 - 2.0 * truth[:2048].astype(np.float32)\n    axes += sigma * rng.standard_normal(2048).astype(np.float32)\n    ctx.outputs[0][...] = (axes[0::2] + 1j * axes[1::2]) / np.sqrt(2.0)\n    ctx.outputs[1][...] = truth\n    # Plot index only, not a claimed physical sample rate.\n    ctx.output_attrs[0][\"sampleRate\"] = 125000.0\n    ctx.output_attrs[0][\"frequency\"] = 0.0\n",
+        "inputCount": 1,
+        "outputCount": 2,
+        "outputTensorSpecs": [
+          {
+            "shape": "[1024]",
+            "axes": "[S]",
+            "dtype": "CF32",
+            "device": "cpu"
+          },
+          {
+            "shape": "[2560]",
+            "axes": "[S]",
+            "dtype": "U8",
+            "device": "cpu"
+          }
+        ],
+        "throttled": false
+      },
+      "meta": {
+        "node": {
+          "x": 400,
+          "y": 0,
+          "width": 360,
+          "height": 0
+        }
+      },
+      "input": {
+        "input0": "${graph.clock.output.signal}"
+      }
+    },
+    {
+      "name": "soft_demapper",
+      "module": "python",
+      "device": "cpu",
+      "runtime": "python",
+      "provider": "generic",
+      "config": {
+        "code": "import numpy as np\n\ndef compute(ctx):\n    # Known I then Q bit order, known phase, one sample per symbol.\n    # These are soft values proportional to LLR, not hard slicing.\n    symbols = ctx.inputs[0]\n    ctx.outputs[0][0::2] = symbols.real * np.sqrt(2.0)\n    ctx.outputs[0][1::2] = symbols.imag * np.sqrt(2.0)\n",
+        "inputCount": 1,
+        "outputCount": 1,
+        "outputTensorSpecs": [
+          {
+            "shape": "[2048]",
+            "axes": "[S]",
+            "dtype": "F32",
+            "device": "cpu"
+          }
+        ],
+        "throttled": false
+      },
+      "meta": {
+        "node": {
+          "x": 800,
+          "y": 0,
+          "width": 360,
+          "height": 0
+        }
+      },
+      "input": {
+        "input0": "${graph.channel.output.output0}"
+      }
+    },
+    {
+      "name": "decode",
+      "module": "ldpc_decoder",
+      "device": "cpu",
+      "runtime": "native",
+      "provider": "generic",
+      "config": {
+        "iterations": 50
+      },
+      "meta": {
+        "node": {
+          "x": 1200,
+          "y": 0,
+          "width": 360,
+          "height": 0
+        }
+      },
+      "input": {
+        "llr": "${graph.soft_demapper.output.output0}"
+      }
+    },
+    {
+      "name": "measure",
+      "module": "python",
+      "device": "cpu",
+      "runtime": "python",
+      "provider": "generic",
+      "config": {
+        "code": "import numpy as np\nimport base64, zlib\n# Embedded AR4JA check topology, uint16 little-endian offsets then variables.\ntopology = np.frombuffer(zlib.decompress(base64.b64decode(\"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\")), dtype=\"<u2\")\ncheck_offsets = topology[:1537].astype(np.int64)\ncheck_vars = topology[1537:].astype(np.int64)\n\nhistory_pre = np.zeros(128, dtype=np.float32)\nhistory_post = np.zeros(128, dtype=np.float32)\nframes = pre_errors = post_errors = frame_errors = 0\n\ndef compute(ctx):\n    global frames, pre_errors, post_errors, frame_errors\n    llr, truth, decoded = ctx.inputs\n    raw = (llr < 0).astype(np.uint8)\n    pre = np.count_nonzero(raw != truth[:2048])\n    # Post-FEC comparison uses the SAME 2048 transmitted positions.\n    post = np.count_nonzero(decoded[:2048] != truth[:2048])\n    wrong_frame = np.any(decoded != truth)\n    frames += 1\n    pre_errors += int(pre)\n    post_errors += int(post)\n    frame_errors += int(wrong_frame)\n    syndrome = np.bitwise_xor.reduceat(decoded[check_vars], check_offsets[:-1])\n    unsatisfied = np.count_nonzero(syndrome)\n    history_pre[:-1] = history_pre[1:]\n    history_post[:-1] = history_post[1:]\n    history_pre[-1] = pre / 2048.0\n    history_post[-1] = post / 2048.0\n    ctx.outputs[0][...] = history_pre\n    ctx.outputs[1][...] = history_post\n    # Numeric counters available on this output's wire inspector:\n    # [frames, pre errors, post errors, compared bits, wrong frames, FER,\n    #  current unsatisfied checks]. Syndrome weight is NOT a BER estimate.\n    ctx.outputs[2][...] = [frames, pre_errors, post_errors, frames * 2048,\n                         frame_errors, frame_errors / frames, unsatisfied]\n    for index in (0, 1):\n        ctx.output_attrs[index][\"sampleRate\"] = 128.0\n        ctx.output_attrs[index][\"frequency\"] = 64.0\n",
+        "inputCount": 3,
+        "outputCount": 3,
+        "outputTensorSpecs": [
+          {
+            "shape": "[128]",
+            "axes": "[S]",
+            "dtype": "F32",
+            "device": "cpu"
+          },
+          {
+            "shape": "[128]",
+            "axes": "[S]",
+            "dtype": "F32",
+            "device": "cpu"
+          },
+          {
+            "shape": "[7]",
+            "axes": "[S]",
+            "dtype": "F64",
+            "device": "cpu"
+          }
+        ],
+        "throttled": false
+      },
+      "meta": {
+        "node": {
+          "x": 1600,
+          "y": 0,
+          "width": 360,
+          "height": 0
+        }
+      },
+      "input": {
+        "input0": "${graph.soft_demapper.output.output0}",
+        "input1": "${graph.channel.output.output1}",
+        "input2": "${graph.decode.output.bits}"
+      }
+    },
+    {
+      "name": "received_constellation",
+      "module": "constellation",
+      "device": "cpu",
+      "runtime": "native",
+      "provider": "generic",
+      "config": {
+        "xLabel": "In-phase",
+        "yLabel": "Quadrature"
+      },
+      "meta": {
+        "node": {
+          "x": 800,
+          "y": 440,
+          "width": 360,
+          "height": 0
+        }
+      },
+      "input": {
+        "signal": "${graph.channel.output.output0}"
+      }
+    },
+    {
+      "name": "pre_fec_ber",
+      "module": "lineplot",
+      "device": "cpu",
+      "runtime": "native",
+      "provider": "generic",
+      "config": {
+        "averaging": 1,
+        "maxHold": false,
+        "fill": false,
+        "density": false,
+        "rangeMin": 0.0,
+        "rangeMax": 1.0,
+        "xLabel": "Recent frame index",
+        "yLabel": "BER (transmitted positions)"
+      },
+      "meta": {
+        "node": {
+          "x": 2000,
+          "y": 0,
+          "width": 360,
+          "height": 0
+        }
+      },
+      "input": {
+        "signal": "${graph.measure.output.output0}"
+      }
+    },
+    {
+      "name": "post_fec_ber",
+      "module": "lineplot",
+      "device": "cpu",
+      "runtime": "native",
+      "provider": "generic",
+      "config": {
+        "averaging": 1,
+        "maxHold": false,
+        "fill": false,
+        "density": false,
+        "rangeMin": 0.0,
+        "rangeMax": 1.0,
+        "xLabel": "Recent frame index",
+        "yLabel": "BER (transmitted positions)"
+      },
+      "meta": {
+        "node": {
+          "x": 2000,
+          "y": 440,
+          "width": 360,
+          "height": 0
+        }
+      },
+      "input": {
+        "signal": "${graph.measure.output.output1}"
+      }
+    }
+  ]
+}

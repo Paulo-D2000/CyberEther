@@ -13,7 +13,7 @@ struct LdpcDecoder : public Block::Config {
     JST_BLOCK_NODE_SIZE(M);
     JST_BLOCK_PARAMS(iterations);
     JST_BLOCK_DESCRIPTION(
-        "LDPC Decoder",
+        "LDPC Decoder (AR4JA 1/2, k=1024)",
         "CCSDS AR4JA rate-1/2 k=1024 LDPC decoder (flooded min-sum).",
         "# LDPC Decoder\n"
         "\n"
@@ -23,7 +23,7 @@ struct LdpcDecoder : public Block::Config {
         "\n"
         "- **One frame per lane.** The last axis must be exactly 2048 LLRs; every "
         "other axis is decoded independently.\n"
-        "- **Output is the full 2560-bit codeword.** Hard decisions as F32 0/1; the "
+        "- **Output is the full 2560-bit codeword.** One U8 byte per bit (0/1); the "
         "last 1024 entries are the information bits.\n"
         "- **Positive LLR = bit 0.** Matches BPSK 0 = +1 convention.\n"
         "\n"
@@ -32,7 +32,7 @@ struct LdpcDecoder : public Block::Config {
         "| Port | Type | Shape |\n"
         "|---|---|---|\n"
         "| **Input** (in) | F32 | Last axis exactly 2048 channel LLRs. |\n"
-        "| **Output** (out) | F32 | Input shape with the last axis replaced by "
+        "| **Output** (out) | U8 | Input shape with the last axis replaced by "
         "2560 hard decisions. |\n"
         "\n"
         "## Settings\n"

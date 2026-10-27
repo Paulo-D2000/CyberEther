@@ -52,7 +52,7 @@ Result LdpcDecoderImpl::create() {
 
     auto outputShape = input.shape();
     outputShape[sampleAxis] = kVarNodes;
-    JST_CHECK(output.create(input.device(), DataType::F32, outputShape));
+    JST_CHECK(output.create(input.device(), DataType::U8, outputShape));
     JST_CHECK(output.propagateAttributes(input));
 
     outputs()["bits"].produced(name(), "bits", output);

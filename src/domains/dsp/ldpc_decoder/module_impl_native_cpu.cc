@@ -19,7 +19,7 @@ constexpr F32 kMaxF32 = std::numeric_limits<F32>::max();
 // Mirrors the validated reference decoder (LDPC-Project decoder_minsum_csr)
 // but with per-edge message storage instead of a dense MxN matrix.
 void DecodeLane(const F32* inputLane,
-                F32* outputLane,
+                U8* outputLane,
                 const U64 sampleStrideIn,
                 const U64 sampleStrideOut,
                 F32* llr,
@@ -73,7 +73,7 @@ void DecodeLane(const F32* inputLane,
             varSum[kCheckVar[e]] += checkToVar[e];
         }
         for (I64 v = 0; v < kVarNodes; ++v) {
-            outputLane[v * sampleStrideOut] = (varSum[v] < 0.0f) ? 1.0f : 0.0f;
+            outputLane[v * sampleStrideOut] = (varSum[v] < 0.0f) ? 1 : 0;
         }
         for (I64 e = 0; e < kNumEdges; ++e) {
             const I64 v = kCheckVar[e];
@@ -128,11 +128,10 @@ Result LdpcDecoderImplNativeCpu::computeSubmit() {
 
 Result LdpcDecoderImplNativeCpu::kernel() {
     const F32* in = input.data<F32>();
-    F32* out = output.data<F32>();
+    U8* out = output.data<U8>();
     const U64 sampleCount = input.shape(sampleAxis);
     const U64 inputSampleStride = input.stride(sampleAxis);
     const U64 outputSampleStride = output.stride(sampleAxis);
-    constexpr I64 kVarNodesLocal = kVarNodes;
 
     for (U64 lane = 0; lane < laneCount; ++lane) {
         U64 coordinates = lane;

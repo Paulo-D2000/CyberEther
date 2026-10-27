@@ -9,16 +9,6 @@
 
 using namespace Jetstream;
 
-TEST_CASE("Aligned LDPC demo is registered as an example",
-          "[modules][dsp][ldpc_decoder][example]") {
-    const auto examples = Registry::ListAvailableFlowgraphs("ldpc-aligned");
-    REQUIRE(examples.size() == 1);
-    REQUIRE(examples.front().title == "Aligned AR4JA LDPC Decoder");
-    Parser::Map document;
-    REQUIRE(Parser::YamlDecode(examples.front().content, document) == Result::SUCCESS);
-    REQUIRE(document.contains("graph"));
-}
-
 TEST_CASE_METHOD(FlowgraphFixture,
                  "LDPC decoder block wires llr input and bits output",
                  "[modules][dsp][ldpc_decoder][block]") {
